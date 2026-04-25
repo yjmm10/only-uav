@@ -19,7 +19,6 @@ class SimplePointMass(IMobility):
         self.vel = np.zeros(3, dtype=np.float64)
 
     def step(self, action):
-        # action: 2D 加速度 [ax, ay]
         acc = np.clip(np.array(action, dtype=np.float64), -2.0, 2.0)
         self.vel[:2] += acc * self.dt
         speed = np.linalg.norm(self.vel[:2])

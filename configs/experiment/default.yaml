@@ -1,12 +1,22 @@
 train:
-  algo: ppo
-  total_timesteps: 5000
-  model_path: trained_models/ppo_edge
-  log_json: logs/training_log.json
+  algo: ${hydra:runtime.choices.algorithm}
+  algos: null
+  total_timesteps: 200000
+  # 作为 algorithm.<algo> 的覆盖层；不填则使用算法默认参数
+  algo_kwargs: {}
+  parallel_multi_algo: true
+  resume: true
+  fixed_reset_seed: 42
+  model_path: trained_models/{algo}_edge
+  log_json: logs/training_log_{algo}.json
+  exec_log: logs/train_exec_{algo}.log
+  metric_jsonl: logs/train_metrics_{algo}.jsonl
 
 eval:
-  episodes: 10
-  output_json: results/eval_metrics.json
+  algo: null
+  algos: null
+  episodes: 30
+  output_json: results/eval_metrics_{algo}.json
 
 plot:
   learning_curve: plots/learning_curve.png

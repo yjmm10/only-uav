@@ -27,17 +27,3 @@ class EdgeOffloading(IComputing):
         total_time = tx_time + proc_time
         comm_energy = tx_time * self.tx_power_w
         return {"exec_time": total_time, "energy": comm_energy, "success": True}
-
-
-@ComponentRegistry.register("LocalOnly")
-class LocalOnly(IComputing):
-    def __init__(self, local_freq=1e9):
-        self.local_freq = local_freq
-
-    def reset(self, **kwargs):
-        return None
-
-    def process(self, task, offload_target, channel_rate):
-        exec_time = task["req_cycles"] / self.local_freq
-        energy = exec_time * 1e-11 * self.local_freq**2
-        return {"exec_time": exec_time, "energy": energy, "success": True}

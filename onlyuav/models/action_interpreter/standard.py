@@ -12,7 +12,6 @@ class StandardInterpreter(IActionInterpreter):
         return None
 
     def interpret(self, raw_action):
-        # raw_action: [move_x, move_y, offload_gate, cpu_scale]
         move = raw_action[:2]
         offload_target = int(raw_action[2] > 0.5)
         cpu_scale = max(float(raw_action[3]), 0.0)

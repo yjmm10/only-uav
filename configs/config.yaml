@@ -1,6 +1,7 @@
 defaults:
   - modules: default
   - experiment: default
+  - algorithm: ppo
   - _self_
 
 seed: 42

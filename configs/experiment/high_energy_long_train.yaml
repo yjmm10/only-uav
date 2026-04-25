@@ -1,0 +1,23 @@
+train:
+  algo: ${hydra:runtime.choices.algorithm}
+  algos: null
+  total_timesteps: 300000
+  # 作为 algorithm.<algo> 的覆盖层；不填则使用算法默认参数
+  algo_kwargs: {}
+  parallel_multi_algo: true
+  resume: true
+  fixed_reset_seed: 42
+  model_path: trained_models/{algo}_edge_high_energy
+  log_json: logs/training_log_high_energy_{algo}.json
+  exec_log: logs/train_exec_high_energy_{algo}.log
+  metric_jsonl: logs/train_metrics_high_energy_{algo}.jsonl
+
+eval:
+  algo: null
+  algos: null
+  episodes: 50
+  output_json: results/eval_metrics_high_energy_{algo}.json
+
+plot:
+  learning_curve: plots/learning_curve_high_energy.png
+  eval_summary: plots/eval_summary_high_energy.png
