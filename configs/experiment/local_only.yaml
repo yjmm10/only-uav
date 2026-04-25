@@ -1,0 +1,13 @@
+train:
+  algo: ppo
+  total_timesteps: 5000
+  model_path: trained_models/ppo_local
+  log_json: logs/training_log_local.json
+
+eval:
+  episodes: 10
+  output_json: results/eval_metrics_local.json
+
+plot:
+  learning_curve: plots/learning_curve_local.png
+  eval_summary: plots/eval_summary_local.png

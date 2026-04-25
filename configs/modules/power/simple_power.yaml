@@ -1,0 +1,5 @@
+type: SimplePower
+params:
+  hover_power: 100.0
+  speed_coeff: 5.0
+  comp_coeff: 1.0e-11

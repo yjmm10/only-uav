@@ -1,0 +1,11 @@
+defaults:
+  - mobility: simple_point_mass
+  - channel: free_space
+  - power: simple_power
+  - task: poisson_arrival
+  - computing: edge_offloading
+  - energy: finite_battery
+  - reward: weighted_sum
+  - observation: full_obs
+  - action_interpreter: standard
+  - env_params: default

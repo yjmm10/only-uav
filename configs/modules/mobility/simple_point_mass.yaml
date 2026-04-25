@@ -1,0 +1,6 @@
+type: SimplePointMass
+params:
+  dt: 1.0
+  max_speed: 10.0
+  bounds: 500.0
+  init_pos: [0.0, 0.0, 50.0]

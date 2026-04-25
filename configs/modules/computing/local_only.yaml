@@ -1,0 +1,3 @@
+type: LocalOnly
+params:
+  local_freq: 1000000000.0

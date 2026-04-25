@@ -1,0 +1,5 @@
+type: FreeSpace
+params:
+  freq: 2400000000.0
+  tx_power_dbm: 20.0
+  bandwidth: 10000000.0

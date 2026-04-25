@@ -1,0 +1,5 @@
+type: WeightedSum
+params:
+  w_throughput: 10.0
+  w_energy: 0.001
+  w_delay: 1.0

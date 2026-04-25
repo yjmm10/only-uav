@@ -1,0 +1,6 @@
+type: EdgeOffloading
+params:
+  edge_freq: 3000000000.0
+  local_freq: 1000000000.0
+  tx_power_w: 2.0
+  edge_latency_bias: 0.02

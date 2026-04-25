@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling>=1.24.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "onlyuav"
+version = "0.1.0"
+description = "Modular UAV offloading simulation with Gymnasium + Hydra."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "gymnasium>=0.29.1",
+  "hydra-core>=1.3.2",
+  "numpy>=1.26.4",
+  "omegaconf>=2.3.0",
+  "pyyaml>=6.0.2",
+  "stable-baselines3>=2.3.2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2.0",
+]
+examples = [
+  "matplotlib>=3.8.4",
+]
+
+[project.scripts]
+onlyuav-train = "onlyuav.train:main"
+onlyuav-eval = "onlyuav.eval:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["onlyuav"]
+
+[tool.uv]
+default-groups = []
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[[tool.uv.index]]
+name = "tencent"
+url = "https://mirrors.cloud.tencent.com/pypi/simple/"
+
+[[tool.uv.index]]
+name = "aliyun"
+url = "https://mirrors.aliyun.com/pypi/simple/"

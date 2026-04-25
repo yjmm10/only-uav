@@ -1,0 +1,4 @@
+type: StandardInterpreter
+params:
+  cpu_freq_min: 500000000.0
+  cpu_freq_max: 2000000000.0

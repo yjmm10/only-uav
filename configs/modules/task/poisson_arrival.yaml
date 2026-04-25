@@ -1,0 +1,6 @@
+type: PoissonArrival
+params:
+  arrival_rate: 0.3
+  data_size_mean: 1000000.0
+  req_cycles_mean: 500000000.0
+  max_delay: 2.0
