@@ -4,6 +4,7 @@ import json
 import logging
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -54,6 +55,13 @@ def _resolve_output_path(raw: str, algo: str, multi_mode: bool) -> Path:
     return Path(raw)
 
 
+def _resolve_metric_path(raw: str, algo: str, multi_mode: bool, hydra_output_dir: Path) -> Path:
+    metric_path = _resolve_output_path(raw, algo, multi_mode)
+    if metric_path.is_absolute():
+        return metric_path
+    return hydra_output_dir / metric_path
+
+
 def _find_checkpoint(model_path: Path) -> Path | None:
     candidates = [model_path]
     if model_path.suffix != ".zip":
@@ -97,11 +105,87 @@ def main(cfg: DictConfig) -> None:
         raise SystemExit("请先安装依赖：`uv sync`") from exc
 
     class TrainingCallback(BaseCallback):
-        def __init__(self, logger_obj, metric_jsonl_path: Path, run_logger: logging.Logger, verbose=0):
+        def __init__(
+            self,
+            logger_obj,
+            metric_jsonl_path: Path,
+            run_logger: logging.Logger,
+            algo_name: str,
+            log_every_steps: int,
+            include_step_reward: bool,
+            include_timestamp: bool,
+            verbose=0,
+        ):
             super().__init__(verbose)
             self.logger_obj = logger_obj
             self.metric_jsonl_path = metric_jsonl_path
             self.run_logger = run_logger
+            self.algo_name = algo_name
+            self.log_every_steps = max(int(log_every_steps), 1)
+            self.include_step_reward = bool(include_step_reward)
+            self.include_timestamp = bool(include_timestamp)
+            self.last_metrics: dict[str, object] = {}
+            self.last_logged_timestep = -1
+            self.start_time = time.time()
+
+        @staticmethod
+        def _extract_metrics(logger_values: dict) -> dict[str, object]:
+            tracked = (
+                "rollout/ep_rew_mean",
+                "rollout/ep_len_mean",
+                "time/fps",
+                "time/iterations",
+                "time/time_elapsed",
+                "time/total_timesteps",
+                "train/approx_kl",
+                "train/clip_fraction",
+                "train/clip_range",
+                "train/entropy_loss",
+                "train/explained_variance",
+                "train/learning_rate",
+                "train/loss",
+                "train/n_updates",
+                "train/policy_gradient_loss",
+                "train/std",
+                "train/value_loss",
+            )
+            out: dict[str, object] = {}
+            for key in tracked:
+                if key in logger_values:
+                    out[key] = _to_jsonable(logger_values[key])
+            return out
+
+        def _emit_metrics(self, step_reward: float, done_flag: bool, force: bool = False) -> None:
+            should_log = force or done_flag or (int(self.num_timesteps) - self.last_logged_timestep >= self.log_every_steps)
+            if not should_log:
+                return
+            logger_values = getattr(self.model.logger, "name_to_value", {})
+            extracted = self._extract_metrics(logger_values)
+            if extracted:
+                self.last_metrics.update(extracted)
+
+            metrics = {
+                "algorithm": self.algo_name,
+                "timesteps": int(self.num_timesteps),
+                "elapsed_s": round(time.time() - self.start_time, 3),
+                "done": bool(done_flag),
+                **self.last_metrics,
+            }
+            if self.include_timestamp:
+                metrics["timestamp"] = datetime.utcnow().isoformat()
+            if self.include_step_reward:
+                metrics["step_reward"] = float(step_reward)
+            infos = self.locals.get("infos")
+            if infos and hasattr(infos, "__len__") and len(infos) > 0 and isinstance(infos[0], dict):
+                ep_info = infos[0].get("episode")
+                if isinstance(ep_info, dict):
+                    if "r" in ep_info:
+                        metrics["episode_reward"] = _to_jsonable(ep_info["r"])
+                    if "l" in ep_info:
+                        metrics["episode_len"] = _to_jsonable(ep_info["l"])
+            with self.metric_jsonl_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(metrics, ensure_ascii=False) + "\n")
+            self.last_logged_timestep = int(self.num_timesteps)
 
         def _on_step(self) -> bool:
             rewards = self.locals.get("rewards", 0.0)
@@ -109,26 +193,11 @@ def main(cfg: DictConfig) -> None:
             reward = rewards[0] if hasattr(rewards, "__len__") else rewards
             done = dones[0] if hasattr(dones, "__len__") else dones
             self.logger_obj.on_step(reward, done, self.num_timesteps)
+            self._emit_metrics(step_reward=float(reward), done_flag=bool(done))
             return True
 
-        def _on_rollout_end(self) -> None:
-            metrics = {"timestamp": datetime.utcnow().isoformat(), "timesteps": int(self.num_timesteps)}
-            logger_values = getattr(self.model.logger, "name_to_value", {})
-            for key in (
-                "rollout/ep_rew_mean",
-                "rollout/ep_len_mean",
-                "train/approx_kl",
-                "train/loss",
-                "train/value_loss",
-                "train/policy_gradient_loss",
-                "train/explained_variance",
-            ):
-                if key in logger_values:
-                    value = logger_values[key]
-                    metrics[key] = _to_jsonable(value)
-            with self.metric_jsonl_path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(metrics, ensure_ascii=False) + "\n")
-            # self.run_logger.info("rollout_end metrics=%s", metrics)
+        def _on_training_end(self) -> None:
+            self._emit_metrics(step_reward=0.0, done_flag=False, force=True)
 
     algos_cfg = cfg.experiment.train.get("algos")
     if algos_cfg:
@@ -141,6 +210,10 @@ def main(cfg: DictConfig) -> None:
     fixed_reset_seed = cfg.experiment.train.get("fixed_reset_seed")
     resume_default = bool(cfg.experiment.train.get("resume", True))
     parallel_multi_algo = bool(cfg.experiment.train.get("parallel_multi_algo", True))
+    log_every_steps = int(cfg.experiment.train.get("metrics_log_every_steps", 100))
+    include_step_reward = bool(cfg.experiment.train.get("metrics_include_step_reward", False))
+    include_timestamp = bool(cfg.experiment.train.get("metrics_include_timestamp", True))
+    hydra_output_dir = Path(HydraConfig.get().runtime.output_dir)
 
     def train_one(algo: str, force_multi_mode: bool = False):
         algo_class, algo_name = get_algo_class(algo)
@@ -152,18 +225,21 @@ def main(cfg: DictConfig) -> None:
         current_multi_mode = force_multi_mode or multi_mode
         model_path = _resolve_output_path(str(cfg.experiment.train.model_path), algo_name, current_multi_mode)
         log_path = _resolve_output_path(str(cfg.experiment.train.log_json), algo_name, current_multi_mode)
-        exec_log_path = _resolve_output_path(str(cfg.experiment.train.exec_log), algo_name, current_multi_mode)
-        metric_jsonl_path = _resolve_output_path(str(cfg.experiment.train.metric_jsonl), algo_name, current_multi_mode)
+        metric_jsonl_path = _resolve_metric_path(
+            str(cfg.experiment.train.metric_jsonl),
+            algo_name,
+            current_multi_mode,
+            hydra_output_dir=hydra_output_dir,
+        )
 
         model_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        exec_log_path.parent.mkdir(parents=True, exist_ok=True)
         metric_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
 
         run_logger = logging.getLogger(f"onlyuav.train.{algo_name}")
         run_logger.handlers.clear()
         run_logger.setLevel(logging.INFO)
-        run_logger.addHandler(logging.FileHandler(exec_log_path, mode="w", encoding="utf-8"))
+        run_logger.propagate = True
         checkpoint = _find_checkpoint(model_path) if resume_default else None
         if checkpoint is not None:
             run_logger.info(
@@ -187,7 +263,15 @@ def main(cfg: DictConfig) -> None:
 
         model.learn(
             total_timesteps=total_timesteps,
-            callback=TrainingCallback(logger, metric_jsonl_path, run_logger),
+            callback=TrainingCallback(
+                logger,
+                metric_jsonl_path,
+                run_logger,
+                algo_name=algo_name,
+                log_every_steps=log_every_steps,
+                include_step_reward=include_step_reward,
+                include_timestamp=include_timestamp,
+            ),
             reset_num_timesteps=reset_num_timesteps,
         )
         model.save(str(model_path))
@@ -198,7 +282,6 @@ def main(cfg: DictConfig) -> None:
         run_logger.info("end training model=%s log_json=%s", model_path, log_path)
         print(f"[{algo_name}] Model saved: {model_path}.zip")
         print(f"[{algo_name}] Training log: {log_path}")
-        print(f"[{algo_name}] Execution log: {exec_log_path}")
         print(f"[{algo_name}] Iteration metrics: {metric_jsonl_path}")
 
     if multi_mode and parallel_multi_algo:
@@ -213,6 +296,9 @@ def main(cfg: DictConfig) -> None:
             "experiment.train.parallel_multi_algo=false",
             f"experiment.train.total_timesteps={total_timesteps}",
             f"experiment.train.resume={'true' if resume_default else 'false'}",
+            f"experiment.train.metrics_log_every_steps={log_every_steps}",
+            f"experiment.train.metrics_include_step_reward={'true' if include_step_reward else 'false'}",
+            f"experiment.train.metrics_include_timestamp={'true' if include_timestamp else 'false'}",
         ]
         if fixed_reset_seed is None:
             base_cmd.append("experiment.train.fixed_reset_seed=null")

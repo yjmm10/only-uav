@@ -137,8 +137,13 @@ python scripts/train.py experiment.train.fixed_reset_seed=null
 ```
 
 训练新增日志文件：
-- 执行日志：`logs/train_exec_{algo}.log`
-- 每轮指标：`logs/train_metrics_{algo}.jsonl`
+- 执行日志：`outputs/<date>/<time>/train.log`（Hydra 单一任务日志）
+- 每轮指标：`outputs/<date>/<time>/<metric_jsonl>`（默认 `logs/train_metrics_{algo}.jsonl`）
+
+推荐指标设置（默认）：
+- `experiment.train.metrics_log_every_steps=100`
+- `experiment.train.metrics_include_step_reward=false`（减少噪声）
+- `experiment.train.metrics_include_timestamp=true`
 
 ## 工程结构
 

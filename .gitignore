@@ -10,3 +10,7 @@ plots/
 outputs/
 multirun/
 trained_models/
+*.zip
+*.log
+*.jsonl
+*.png *.jpeg *.jpg *.webp
