@@ -1,0 +1,13 @@
+lr: 0.0003
+gamma: 0.99
+tau: 0.005
+batch_size: 256
+step_per_collect: 2048
+training_num_envs: 1
+hidden_sizes: [64, 64]
+learning_starts: 5000
+gradient_steps: 1
+auto_alpha: true
+target_entropy_scale: 1.0
+reward_normalization: false
+estimation_step: 1

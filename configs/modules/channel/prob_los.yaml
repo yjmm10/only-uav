@@ -1,0 +1,9 @@
+type: ProbabilisticLOS
+params:
+  freq: 2400000000.0
+  tx_power_dbm: 20.0
+  bandwidth: 10000000.0
+  los_prob_suburban: 0.85
+  los_prob_urban: 0.45
+  distance_threshold_m: 200.0
+  nlos_extra_loss_db: 15.0

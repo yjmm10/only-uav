@@ -1,9 +1,14 @@
 train:
-  algo: ${hydra:runtime.choices.algorithm}
+  backend: sb3
+  algorithm: ppo
   algos: null
   total_timesteps: 200000
-  # 作为 algorithm.<algo> 的覆盖层；不填则使用算法默认参数
+  shared_algo_kwargs: {}
   algo_kwargs: {}
+  rllib:
+    num_env_runners: 0
+    num_cpus: 2
+    use_new_api_stack: false
   parallel_multi_algo: true
   resume: true
   fixed_reset_seed: 42

@@ -1,0 +1,4 @@
+# Ray RLlib PPO；键名与 RLlib AlgorithmConfig.training 常见字段对齐
+lr: 0.0003
+gamma: 0.99
+train_batch_size: 4000

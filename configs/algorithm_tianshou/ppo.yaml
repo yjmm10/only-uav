@@ -1,0 +1,15 @@
+lr: 0.0003
+gamma: 0.99
+batch_size: 64
+step_per_collect: 2048
+repeat_per_update: 10
+training_num_envs: 1
+hidden_sizes: [64, 64]
+max_grad_norm: 0.5
+eps_clip: 0.2
+vf_coef: 0.5
+ent_coef: 0.0
+advantage_normalization: true
+recompute_advantage: true
+value_clip: true
+gae_lambda: 0.95

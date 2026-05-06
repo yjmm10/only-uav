@@ -1,0 +1,4 @@
+type: EnergyHarvesting
+params:
+  capacity: 5000.0
+  harvest_rate: 2.0

@@ -1,0 +1,182 @@
+from __future__ import annotations
+
+import json
+import logging
+import os
+import time
+from datetime import datetime
+from pathlib import Path
+
+import ray
+from omegaconf import DictConfig, OmegaConf
+from ray.tune.registry import register_env
+
+from onlyuav.rl.common import append_jsonl, attach_train_file_logger, modules_dict_for_rllib, to_jsonable
+from onlyuav.rl.hparams import load_algo_hparams
+
+
+def _register_onlyuav_env() -> None:
+    from onlyuav.core.env_builder import EnvBuilder
+    from onlyuav.models import load_default_components
+    from onlyuav.rl.common import FixedSeedResetWrapper
+
+    def _creator(env_config: dict):
+        load_default_components()
+        env = EnvBuilder.build(OmegaConf.create(env_config["modules"]))
+        if env_config.get("fixed_reset_seed") is not None:
+            env = FixedSeedResetWrapper(env, int(env_config["fixed_reset_seed"]))
+        return env
+
+    register_env("onlyuav_drone", _creator)
+
+
+def train_rllib(
+    cfg: DictConfig,
+    *,
+    algo_name: str,
+    total_timesteps: int,
+    fixed_reset_seed: int | None,
+    resume_default: bool,
+    model_path: Path,
+    log_path: Path,
+    metric_jsonl_path: Path,
+    log_every_steps: int,
+    include_step_reward: bool,
+    include_timestamp: bool,
+    train_log_path: Path | None = None,
+    session_dir: Path | None = None,
+) -> None:
+    if not os.environ.get("CUDA_VISIBLE_DEVICES"):
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    try:
+        from ray.rllib.algorithms.ppo import PPOConfig
+        from ray.rllib.algorithms.sac import SACConfig
+    except ImportError as exc:
+        raise SystemExit("请先安装 RLlib：`uv sync --extra rllib`") from exc
+
+    h = dict(load_algo_hparams(cfg, algo_name))
+    rllib_over = OmegaConf.to_container(cfg.experiment.train.get("rllib", {}), resolve=True) or {}
+    num_env_runners = int(rllib_over.get("num_env_runners", 0))
+    num_cpus = int(rllib_over.get("num_cpus", 1))
+    use_new_api = bool(rllib_over.get("use_new_api_stack", False))
+
+    run_logger = logging.getLogger(f"onlyuav.train.rllib.{algo_name.lower()}")
+    run_logger.handlers.clear()
+    run_logger.setLevel(logging.INFO)
+    run_logger.propagate = True
+    if train_log_path is not None:
+        attach_train_file_logger(run_logger, train_log_path)
+    if session_dir is not None:
+        run_logger.info("session_dir=%s metric_jsonl=%s", session_dir, metric_jsonl_path)
+
+    ray_init_here = False
+    if not ray.is_initialized():
+        ray.init(num_cpus=num_cpus, num_gpus=0, ignore_reinit_error=True)
+        ray_init_here = True
+
+    _register_onlyuav_env()
+    env_cfg = {
+        "modules": modules_dict_for_rllib(cfg),
+        "fixed_reset_seed": fixed_reset_seed,
+    }
+
+    key = algo_name.lower()
+    train_common = {}
+    for src, dst in (("lr", "lr"), ("gamma", "gamma"), ("train_batch_size", "train_batch_size")):
+        if src in h:
+            train_common[dst] = h[src]
+
+    if key == "ppo":
+        config = (
+            PPOConfig()
+            .api_stack(
+                enable_rl_module_and_learner=use_new_api,
+                enable_env_runner_and_connector_v2=use_new_api,
+            )
+            .environment(env="onlyuav_drone", env_config=env_cfg)
+            .env_runners(num_env_runners=num_env_runners)
+            .framework("torch")
+            .training(**train_common)
+        )
+        algo = config.build_algo()
+    elif key == "sac":
+        train_sac = dict(train_common)
+        if "tau" in h:
+            train_sac["tau"] = h["tau"]
+        config = (
+            SACConfig()
+            .api_stack(
+                enable_rl_module_and_learner=use_new_api,
+                enable_env_runner_and_connector_v2=use_new_api,
+            )
+            .environment(env="onlyuav_drone", env_config=env_cfg)
+            .env_runners(num_env_runners=num_env_runners)
+            .framework("torch")
+            .training(**train_sac)
+        )
+        algo = config.build_algo()
+    else:
+        if ray_init_here:
+            ray.shutdown()
+        raise ValueError(f"rllib 不支持算法 {algo_name!r}")
+
+    ckpt_dir = Path(model_path)
+    if ckpt_dir.suffix.lower() == ".zip":
+        ckpt_dir = ckpt_dir.with_suffix("")
+    ckpt_dir = Path(str(ckpt_dir) + "_rllib_ckpt")
+    if resume_default and ckpt_dir.exists() and ckpt_dir.is_dir() and any(ckpt_dir.iterdir()):
+        run_logger.info("RESUME rllib algo=%s checkpoint_dir=%s", key, ckpt_dir)
+        algo.restore(str(ckpt_dir))
+    else:
+        run_logger.info("FRESH_START rllib algo=%s total_timesteps=%s", key, total_timesteps)
+
+    start_t = time.time()
+    last_logged = -1
+    trained_steps = 0
+    try:
+        while trained_steps < total_timesteps:
+            result = algo.train()
+            trained_steps = int(
+                result.get("num_env_steps_sampled")
+                or result.get("timesteps_total")
+                or trained_steps
+            )
+            if trained_steps - last_logged >= log_every_steps or trained_steps >= total_timesteps:
+                last_logged = trained_steps
+                row: dict = {
+                    "library": "rllib",
+                    "algorithm": key,
+                    "timesteps": trained_steps,
+                    "elapsed_s": round(time.time() - start_t, 3),
+                }
+                if include_timestamp:
+                    row["timestamp"] = datetime.utcnow().isoformat()
+                for rk, rv in result.items():
+                    if isinstance(rv, (int, float, str, bool, type(None))):
+                        row[f"result/{rk}"] = to_jsonable(rv)
+                if not include_step_reward:
+                    row.pop("step_reward", None)
+                append_jsonl(metric_jsonl_path, row)
+    finally:
+        save_dir = str(ckpt_dir)
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        algo.save(save_dir)
+        algo.stop()
+        if ray_init_here:
+            ray.shutdown()
+
+    with log_path.open("w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "library": "rllib",
+                "algorithm": key,
+                "checkpoint_dir": save_dir,
+                "timesteps_target": total_timesteps,
+                "timesteps_trained": trained_steps,
+            },
+            f,
+            indent=2,
+        )
+    run_logger.info("end training checkpoint=%s", save_dir)
+    print(f"[rllib/{key}] Checkpoint dir: {save_dir}")
+    print(f"[rllib/{key}] Metrics: {metric_jsonl_path}")

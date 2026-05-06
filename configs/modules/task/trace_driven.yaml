@@ -1,0 +1,9 @@
+type: TraceDriven
+params:
+  max_delay: 2.0
+  loop: true
+  rows:
+    - data_size: 1000000.0
+      req_cycles: 400000000.0
+    - data_size: 1500000.0
+      req_cycles: 550000000.0

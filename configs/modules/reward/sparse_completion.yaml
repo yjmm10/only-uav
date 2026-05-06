@@ -1,0 +1,3 @@
+type: SparseCompletion
+params:
+  completion_bonus: 1.0

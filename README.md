@@ -5,7 +5,7 @@
 - 组件注册 + 动态组装（`EnvBuilder`）
 - 标准 `gymnasium.Env` 接口
 - `Hydra` 多层配置（可按模块覆盖）
-- `uv` 包管理与可选训练/评估流程（SB3）
+- `uv` 包管理与多 RL 库训练入口（SB3 / RLlib / Tianshou / DI-engine）
 
 ## 快速开始（uv）
 
@@ -70,7 +70,7 @@ uv run python -m onlyuav.plot --type eval_summary --input results/eval_metrics_p
 
 ## 多算法批量训练
 
-通过 Hydra 列表参数一次训练多个算法（支持 `ppo/a2c/sac/td3`）：
+通过 Hydra 列表参数一次训练多个算法。单次运行使用**同一个** `experiment.train.backend`（例如全部为 SB3 的 `ppo/a2c/sac/td3`，或全部为 RLlib 的 `ppo/sac`）：
 
 ```bash
 python scripts/train.py experiment.train.algos=[ppo,sac,td3]
@@ -89,28 +89,48 @@ python scripts/train.py experiment.train.algos=[ppo,sac,td3] experiment.train.pa
 - `results/eval_metrics_ppo.json`
 - `results/eval_metrics_sac.json`
 
-## 规范化算法参数配置
+## 算法切换与默认超参（可行性说明）
 
-不同算法使用不同配置文件：
-- `configs/algorithm/ppo.yaml`
-- `configs/algorithm/a2c.yaml`
-- `configs/algorithm/sac.yaml`
-- `configs/algorithm/td3.yaml`
+**同一开源库内「只改算法名、其它参数完全不动」是否可行？**
 
-通过 `algorithm=xxx` 选择对应算法配置文件：
+- **部分可行**：像 `learning_rate`、`gamma` 这类多数算法都有的量，可以抽到 `experiment.train.shared_algo_kwargs` 里统一写；但 PPO 的 `n_steps`、SAC 的 `buffer_size`、TD3 的 `policy_delay` 等**算法专有**项无法在「一套扁平超参」里做到语义完全一致，否则要么无效键、要么库报错。
+- **本仓库做法**：在 `onlyuav/rl/builtin_defaults.py` 为每个 `(backend, algorithm)` 维护**已对齐该库 API 的默认字典**；你只改 `experiment.train.algorithm`（或列表 `experiment.train.algos`）即可切换，**不必**为每个算法单独写 YAML。
+- **叠加优先级（从低到高）**：内置默认 → `shared_algo_kwargs` → 若存在 `configs/algorithm*` 下同名 YAML 则合并 →（可选）在 `config.yaml` 的 `defaults` 中加入 `algorithm: ppo` 后可用 `algorithm.*` 覆盖 SB3 → `experiment.train.algo_kwargs`。
+
+| backend | 依赖 | 内置算法 | 可选 YAML 目录 |
+|---------|------|-----------|----------------|
+| `sb3` | 默认 | ppo, a2c, sac, td3 | `configs/algorithm/` |
+| `rllib` | `--extra rllib` | ppo, sac | `configs/algorithm_rllib/` |
+| `tianshou` | `--extra tianshou` | ppo, sac | `configs/algorithm_tianshou/` |
+| `di_engine` | `--extra di-engine` | ppo | `configs/algorithm_ding/` |
+
+示例（只改算法名）：
 
 ```bash
-python scripts/train.py algorithm=ppo
-python scripts/train.py algorithm=sac
+uv run python -m onlyuav.train experiment.train.algorithm=sac
+uv run python -m onlyuav.train experiment.train.algorithm=td3 experiment.train.backend=sb3
 ```
 
-你也可以在命令行覆盖当前算法的参数：
+多算法并行（SB3 四种一次跑完）：
 
 ```bash
-python scripts/train.py algorithm=ppo algorithm.learning_rate=1e-4 algorithm.batch_size=256
+uv run python -m onlyuav.train 'experiment.train.algos=[ppo,a2c,sac,td3]' experiment.train.parallel_multi_algo=true
 ```
 
-`experiment.train.algo_kwargs` 仍保留为通用覆盖层（优先级更高）。
+后台跑、日志进 `output.log`：
+
+```bash
+bash scripts/nohup_train_all_sb3.sh 50000   # 第二个参数为每算法步数，默认 50000
+# 或: nohup uv run python -m onlyuav.train ... >> output.log 2>&1 &
+```
+
+若要用 Hydra 的 `algorithm.xxx` 语法覆盖 SB3，请在 `configs/config.yaml` 的 `defaults` 中自行加回一行 `- algorithm: ppo`。
+
+`experiment.train.algo_kwargs` 仍为**最高优先级**覆盖。
+
+RLlib 专有项见 `experiment.train.rllib`。
+
+**评估**：`onlyuav.eval` 仅支持 SB3 的 `.zip`；其它 backend 需在各库内评估。
 
 ## 断点续训（默认开启）
 

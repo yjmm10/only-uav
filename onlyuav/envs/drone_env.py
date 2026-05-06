@@ -60,6 +60,7 @@ class DroneEnv(gym.Env):
         self.mobility.reset()
         self.energy_model.reset()
         self.task_gen.reset()
+        self.computing.reset()
         self.action_interp.reset()
         self.reward_model.reset()
         return self._get_obs(), {}

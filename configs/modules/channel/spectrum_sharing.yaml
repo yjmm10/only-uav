@@ -1,0 +1,6 @@
+type: SpectrumSharing
+params:
+  freq: 2400000000.0
+  tx_power_dbm: 20.0
+  bandwidth: 10000000.0
+  interference_factor: 0.35

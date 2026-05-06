@@ -1,3 +1,4 @@
+policy: MlpPolicy
 learning_rate: 1.0e-3
 buffer_size: 1000000
 learning_starts: 100

@@ -1,9 +1,19 @@
 train:
-  algo: ${hydra:runtime.choices.algorithm}
+  # sb3 | rllib | tianshou | di_engine；切换算法主要改下方 algorithm（或 algos 列表）
+  backend: sb3
+  # 单算法训练时使用的名称；内置默认见 onlyuav.rl.builtin_defaults（无需为每个算法写 YAML）
+  algorithm: ppo
   algos: null
   total_timesteps: 200000
-  # 作为 algorithm.<algo> 的覆盖层；不填则使用算法默认参数
+  # 同一 backend 下各算法共享的键（如 learning_rate、gamma）；仅当该算法支持相应键时生效
+  shared_algo_kwargs: {}
+  # 最高优先级覆盖（等价于细调当前算法）
   algo_kwargs: {}
+  # 仅 RLlib 使用；num_env_runners=0 可在单机避免部分 Ray worker 环境问题
+  rllib:
+    num_env_runners: 0
+    num_cpus: 2
+    use_new_api_stack: false
   parallel_multi_algo: true
   resume: true
   fixed_reset_seed: 42

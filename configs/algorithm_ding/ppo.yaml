@@ -1,0 +1,18 @@
+# DI-engine PPO（连续动作）；映射至 onlyuav.rl.ding_bundle.build_ppo_configs
+learning_rate: 0.001
+batch_size: 32
+epoch_per_collect: 10
+collector_env_num: 4
+evaluator_env_num: 2
+n_evaluator_episode: 3
+n_sample: 4000
+gamma: 0.99
+gae_lambda: 0.95
+clip_ratio: 0.2
+value_weight: 0.5
+entropy_weight: 0.0
+eval_freq: 200
+obs_shape: 8
+action_shape: 4
+encoder_hidden_size_list: [64, 64]
+cuda: false

@@ -1,0 +1,7 @@
+type: RandomWaypoint
+params:
+  dt: 1.0
+  max_speed: 8.0
+  bounds: 500.0
+  waypoint_radius: 20.0
+  fixed_altitude: 50.0
