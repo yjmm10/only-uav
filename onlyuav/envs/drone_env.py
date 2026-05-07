@@ -36,8 +36,8 @@ class DroneEnv(gym.Env):
         self.dt = dt
 
         self.action_space = spaces.Box(
-            low=np.array([-1.0, -1.0, 0.0, 0.0], dtype=np.float32),
-            high=np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float32),
+            low=np.array([-1.0, -1.0, 0.0], dtype=np.float32),
+            high=np.array([1.0, 1.0, 1.0], dtype=np.float32),
             dtype=np.float32,
         )
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(8,), dtype=np.float32)
@@ -66,7 +66,7 @@ class DroneEnv(gym.Env):
         return self._get_obs(), {}
 
     def step(self, action):
-        move_cmd, offload_target, cpu_freq = self.action_interp.interpret(action)
+        move_cmd, offload_target, fixed_compute_for_power = self.action_interp.interpret(action)
 
         # 移动与信道
         state = self.mobility.step(move_cmd)
@@ -92,7 +92,7 @@ class DroneEnv(gym.Env):
             self.total_completed += completed
 
         # 功耗与电量
-        power_total = self.power.compute(vel, cpu_freq)
+        power_total = self.power.compute(vel, fixed_compute_for_power)
         self.energy_model.consume(power_total, dt=self.dt)
         self.total_delay += delay
         self.total_energy += power_total + comp_energy

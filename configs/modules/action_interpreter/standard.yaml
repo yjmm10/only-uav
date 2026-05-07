@@ -1,4 +1,4 @@
 type: StandardInterpreter
 params:
-  cpu_freq_min: 500000000.0
-  cpu_freq_max: 2000000000.0
+  # 机载 CPU 固定工作频率（Hz），用于功耗模型中的计算负载项；与 computing.local_freq 宜保持一致
+  fixed_local_cpu_freq: 1000000000.0
