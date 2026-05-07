@@ -2,8 +2,8 @@ from __future__ import annotations
 
 SUPPORTED_ALGOS: dict[str, frozenset[str]] = {
     "sb3": frozenset({"ppo", "a2c", "sac", "td3"}),
-    "rllib": frozenset({"ppo", "sac"}),
-    "tianshou": frozenset({"ppo", "sac"}),
+    "rllib": frozenset({"ppo", "a2c", "sac", "td3", "ddpg"}),
+    "tianshou": frozenset({"ppo", "a2c", "sac", "td3", "ddpg"}),
     "di_engine": frozenset({"ppo"}),
 }
 

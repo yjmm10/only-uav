@@ -12,10 +12,10 @@ from onlyuav.rl.registry import normalize_backend
 
 # 可选：按库从 YAML 叠加（文件不存在则仅用内置 + 覆盖项）
 BACKEND_PARAM_DIR: dict[str, str] = {
-    "sb3": "algorithm",
-    "rllib": "algorithm_rllib",
-    "tianshou": "algorithm_tianshou",
-    "di_engine": "algorithm_ding",
+    "sb3": "algorithm/sb3",
+    "rllib": "algorithm/rlib",
+    "tianshou": "algorithm/tianshou",
+    "di_engine": "algorithm/ding",
 }
 
 
@@ -49,9 +49,9 @@ def load_algo_hparams(cfg: DictConfig, algo_name: str) -> dict[str, Any]:
 
     selected = resolve_training_algorithm_name(cfg)
     if backend == "sb3" and key == selected:
-        if getattr(cfg, "algorithm", None) is not None:
-            hydra_algo = OmegaConf.to_container(cfg.algorithm, resolve=True) or {}
-            merged.update(hydra_algo)
+        hydra_sb3 = OmegaConf.select(cfg, "algorithm.sb3")
+        if hydra_sb3 is not None:
+            merged.update(OmegaConf.to_container(hydra_sb3, resolve=True) or {})
 
     override = OmegaConf.to_container(cfg.experiment.train.get("algo_kwargs", {}), resolve=True) or {}
     merged.update(override)

@@ -1,7 +1,7 @@
 defaults:
   - modules: default
   - experiment: default
-  # 算法名在 experiment.train.algorithm；若需 Hydra 组覆盖 SB3 参数可加上: algorithm: ppo
+  # 算法名在 experiment.train.algorithm；若需 Hydra 组覆盖 SB3 参数可在 defaults 中加 algorithm/sb3: ppo（或 CLI +algorithm/sb3=ppo）
   - _self_
 
 seed: 42

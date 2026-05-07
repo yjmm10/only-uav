@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 import os
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Type
 
 import ray
 from omegaconf import DictConfig, OmegaConf
@@ -13,6 +15,30 @@ from ray.tune.registry import register_env
 
 from onlyuav.rl.common import append_jsonl, attach_train_file_logger, modules_dict_for_rllib, to_jsonable
 from onlyuav.rl.hparams import load_algo_hparams
+
+_RLLIB_CONFIG_MODULES: dict[str, tuple[str, str]] = {
+    "ppo": ("ray.rllib.algorithms.ppo", "PPOConfig"),
+    "sac": ("ray.rllib.algorithms.sac", "SACConfig"),
+    "a2c": ("ray.rllib.algorithms.a2c", "A2CConfig"),
+    "td3": ("ray.rllib.algorithms.td3", "TD3Config"),
+    "ddpg": ("ray.rllib.algorithms.ddpg", "DDPGConfig"),
+}
+
+
+def _load_rllib_config_class(algo: str) -> Type[Any]:
+    key = algo.lower()
+    if key not in _RLLIB_CONFIG_MODULES:
+        raise ValueError(f"rllib 不支持算法 {algo!r}")
+    mod_name, cls_name = _RLLIB_CONFIG_MODULES[key]
+    try:
+        mod = importlib.import_module(mod_name)
+        return getattr(mod, cls_name)
+    except (ImportError, AttributeError) as exc:
+        raise ValueError(
+            f"当前 Ray 安装未提供 {mod_name}.{cls_name}（算法 {key!r}）。"
+            "较新版本 RLlib 可能已移除 TD3/DDPG/A2C 等，请使用 sb3/tianshou 后端，"
+            "或为 rllib 安装仍包含该 Config 的 Ray 版本。"
+        ) from exc
 
 
 def _register_onlyuav_env() -> None:
@@ -49,10 +75,15 @@ def train_rllib(
     if not os.environ.get("CUDA_VISIBLE_DEVICES"):
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
     try:
-        from ray.rllib.algorithms.ppo import PPOConfig
-        from ray.rllib.algorithms.sac import SACConfig
+        import ray.rllib  # noqa: F401
     except ImportError as exc:
         raise SystemExit("请先安装 RLlib：`uv sync --extra rllib`") from exc
+
+    key = algo_name.lower()
+    try:
+        ConfigClass = _load_rllib_config_class(key)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
     h = dict(load_algo_hparams(cfg, algo_name))
     rllib_over = OmegaConf.to_container(cfg.experiment.train.get("rllib", {}), resolve=True) or {}
@@ -80,45 +111,32 @@ def train_rllib(
         "fixed_reset_seed": fixed_reset_seed,
     }
 
-    key = algo_name.lower()
-    train_common = {}
+    train_common: dict[str, Any] = {}
     for src, dst in (("lr", "lr"), ("gamma", "gamma"), ("train_batch_size", "train_batch_size")):
         if src in h:
             train_common[dst] = h[src]
 
-    if key == "ppo":
-        config = (
-            PPOConfig()
-            .api_stack(
-                enable_rl_module_and_learner=use_new_api,
-                enable_env_runner_and_connector_v2=use_new_api,
-            )
-            .environment(env="onlyuav_drone", env_config=env_cfg)
-            .env_runners(num_env_runners=num_env_runners)
-            .framework("torch")
-            .training(**train_common)
+    train_kwargs = dict(train_common)
+    if key in ("sac", "td3", "ddpg") and "tau" in h:
+        train_kwargs["tau"] = h["tau"]
+
+    config = (
+        ConfigClass()
+        .api_stack(
+            enable_rl_module_and_learner=use_new_api,
+            enable_env_runner_and_connector_v2=use_new_api,
         )
-        algo = config.build_algo()
-    elif key == "sac":
-        train_sac = dict(train_common)
-        if "tau" in h:
-            train_sac["tau"] = h["tau"]
-        config = (
-            SACConfig()
-            .api_stack(
-                enable_rl_module_and_learner=use_new_api,
-                enable_env_runner_and_connector_v2=use_new_api,
-            )
-            .environment(env="onlyuav_drone", env_config=env_cfg)
-            .env_runners(num_env_runners=num_env_runners)
-            .framework("torch")
-            .training(**train_sac)
-        )
-        algo = config.build_algo()
-    else:
+        .environment(env="onlyuav_drone", env_config=env_cfg)
+        .env_runners(num_env_runners=num_env_runners)
+        .framework("torch")
+        .training(**train_kwargs)
+    )
+    build = getattr(config, "build_algo", None) or getattr(config, "build", None)
+    if build is None:
         if ray_init_here:
             ray.shutdown()
-        raise ValueError(f"rllib 不支持算法 {algo_name!r}")
+        raise SystemExit("RLlib Config 缺少 build_algo / build，请检查 Ray 版本。")
+    algo = build()
 
     ckpt_dir = Path(model_path)
     if ckpt_dir.suffix.lower() == ".zip":

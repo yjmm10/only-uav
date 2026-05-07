@@ -35,7 +35,8 @@ def train_tianshou(
     try:
         from tianshou.data import Collector, VectorReplayBuffer
         from tianshou.env import DummyVectorEnv
-        from tianshou.policy import PPOPolicy, SACPolicy
+        from tianshou.exploration import GaussianNoise
+        from tianshou.policy import A2CPolicy, DDPGPolicy, PPOPolicy, SACPolicy, TD3Policy
         from tianshou.utils.net.common import Net
         from tianshou.utils.net.continuous import Actor, ActorProb, Critic
     except ImportError as exc:
@@ -103,6 +104,26 @@ def train_tianshou(
             action_scaling=True,
             gae_lambda=float(h.get("gae_lambda", 0.95)),
         ).to(device)
+    elif key == "a2c":
+        net_a = Net(state_shape, hidden_sizes=hidden, device=device)
+        actor = ActorProb(net_a, action_shape, max_action=max_action, unbounded=True, device=device).to(device)
+        net_c = Net(state_shape, hidden_sizes=hidden, device=device)
+        critic = Critic(net_c, device=device).to(device)
+        optim_a2c = torch.optim.Adam(list(actor.parameters()) + list(critic.parameters()), lr=lr)
+        mg = h.get("max_grad_norm", 0.5)
+        policy = A2CPolicy(
+            actor,
+            critic,
+            optim_a2c,
+            dist_fn,
+            discount_factor=float(h.get("gamma", 0.99)),
+            vf_coef=float(h.get("vf_coef", 0.5)),
+            ent_coef=float(h.get("ent_coef", 0.01)),
+            max_grad_norm=float(mg) if mg is not None else None,
+            gae_lambda=float(h.get("gae_lambda", 1.0)),
+            max_batchsize=int(h.get("max_batchsize", 256)),
+            action_space=env0.action_space,
+        ).to(device)
     elif key == "sac":
         net_a = Net(state_shape, hidden_sizes=hidden, device=device)
         actor = Actor(net_a, action_shape, max_action=max_action, device=device).to(device)
@@ -133,6 +154,54 @@ def train_tianshou(
             action_space=env0.action_space,
             reward_normalization=bool(h.get("reward_normalization", False)),
             estimation_step=int(h.get("estimation_step", 1)),
+        ).to(device)
+    elif key == "td3":
+        net_a = Net(state_shape, hidden_sizes=hidden, device=device)
+        actor = Actor(net_a, action_shape, max_action=max_action, device=device).to(device)
+        net_c1 = Net(state_shape, action_shape, hidden_sizes=hidden, device=device, concat=True)
+        net_c2 = Net(state_shape, action_shape, hidden_sizes=hidden, device=device, concat=True)
+        critic1 = Critic(net_c1, device=device).to(device)
+        critic2 = Critic(net_c2, device=device).to(device)
+        actor_optim = torch.optim.Adam(actor.parameters(), lr=lr)
+        critic1_optim = torch.optim.Adam(critic1.parameters(), lr=lr)
+        critic2_optim = torch.optim.Adam(critic2.parameters(), lr=lr)
+        exploration_noise = GaussianNoise(sigma=float(h.get("exploration_sigma", 0.1)))
+        policy = TD3Policy(
+            actor,
+            actor_optim,
+            critic1,
+            critic1_optim,
+            critic2,
+            critic2_optim,
+            tau=float(h.get("tau", 0.005)),
+            gamma=float(h.get("gamma", 0.99)),
+            exploration_noise=exploration_noise,
+            policy_noise=float(h.get("policy_noise", 0.2)),
+            update_actor_freq=int(h.get("update_actor_freq", 2)),
+            noise_clip=float(h.get("noise_clip", 0.5)),
+            reward_normalization=bool(h.get("reward_normalization", False)),
+            estimation_step=int(h.get("estimation_step", 1)),
+            action_space=env0.action_space,
+        ).to(device)
+    elif key == "ddpg":
+        net_a = Net(state_shape, hidden_sizes=hidden, device=device)
+        actor = Actor(net_a, action_shape, max_action=max_action, device=device).to(device)
+        net_c = Net(state_shape, action_shape, hidden_sizes=hidden, device=device, concat=True)
+        critic = Critic(net_c, device=device).to(device)
+        actor_optim = torch.optim.Adam(actor.parameters(), lr=lr)
+        critic_optim = torch.optim.Adam(critic.parameters(), lr=lr)
+        exploration_noise = GaussianNoise(sigma=float(h.get("exploration_sigma", 0.1)))
+        policy = DDPGPolicy(
+            actor,
+            actor_optim,
+            critic,
+            critic_optim,
+            tau=float(h.get("tau", 0.005)),
+            gamma=float(h.get("gamma", 0.99)),
+            exploration_noise=exploration_noise,
+            reward_normalization=bool(h.get("reward_normalization", False)),
+            estimation_step=int(h.get("estimation_step", 1)),
+            action_space=env0.action_space,
         ).to(device)
     else:
         raise ValueError(f"tianshou 后端不支持算法 {algo_name!r}")
@@ -165,7 +234,7 @@ def train_tianshou(
         result = collector.collect(n_step=n)
         env_steps += int(result["n/st"])
 
-        if key == "ppo":
+        if key in ("ppo", "a2c"):
             policy.update(0, collector.buffer, batch_size=batch_size, repeat=repeat)
             collector.reset_buffer(keep_statistics=True)
         else:

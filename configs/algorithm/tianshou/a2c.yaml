@@ -1,0 +1,12 @@
+lr: 0.0007
+gamma: 0.99
+batch_size: 64
+step_per_collect: 2048
+repeat_per_update: 5
+training_num_envs: 1
+hidden_sizes: [64, 64]
+max_grad_norm: 0.5
+vf_coef: 0.5
+ent_coef: 0.01
+gae_lambda: 1.0
+max_batchsize: 256

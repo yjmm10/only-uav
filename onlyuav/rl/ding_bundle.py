@@ -9,7 +9,7 @@ from easydict import EasyDict
 
 
 def build_ppo_configs(hyper: dict[str, Any]) -> tuple[EasyDict, EasyDict]:
-    """根据 algorithm_ding/ppo.yaml 中的键合并到默认 PPO 配置。"""
+    """根据 algorithm/ding/ppo.yaml 中的键合并到默认 PPO 配置。"""
     lr = float(hyper.get("learning_rate", 1e-3))
     batch_size = int(hyper.get("batch_size", 32))
     epoch_per_collect = int(hyper.get("epoch_per_collect", 10))

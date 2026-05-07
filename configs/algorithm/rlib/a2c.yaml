@@ -1,0 +1,4 @@
+# Ray RLlib A2C；需当前 Ray 版本仍提供 ray.rllib.algorithms.a2c.A2CConfig
+lr: 0.0007
+gamma: 0.99
+train_batch_size: 4000

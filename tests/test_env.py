@@ -1,21 +1,14 @@
-from pathlib import Path
-
 import pytest
-from hydra import compose, initialize_config_dir
 
 from onlyuav.core.env_builder import EnvBuilder
 from onlyuav.models import load_default_components
 
-
-def _compose(overrides=None):
-    config_dir = str((Path(__file__).resolve().parents[1] / "configs"))
-    with initialize_config_dir(config_dir=config_dir, version_base=None):
-        return compose(config_name="config", overrides=overrides or [])
+from tests.support import compose_config
 
 
 def test_env_runs():
     load_default_components()
-    cfg = _compose()
+    cfg = compose_config()
     env = EnvBuilder.build(cfg.modules)
     obs, _ = env.reset(seed=0)
     assert obs.shape == env.observation_space.shape
@@ -27,7 +20,7 @@ def test_env_runs():
 
 def test_hydra_override_local_only():
     load_default_components()
-    cfg = _compose(["experiment=local_only", "modules/computing=local_only"])
+    cfg = compose_config(["experiment=local_only", "modules/computing=local_only"])
     env = EnvBuilder.build(cfg.modules)
     assert type(env.computing).__name__ == "LocalOnly"
 
@@ -55,7 +48,7 @@ def test_hydra_override_local_only():
 )
 def test_planning_doc_module_variants_run(overrides):
     load_default_components()
-    cfg = _compose(overrides)
+    cfg = compose_config(overrides)
     env = EnvBuilder.build(cfg.modules)
     obs, _ = env.reset(seed=0)
     assert obs.shape == (8,)
@@ -86,18 +79,43 @@ def test_algo_hparams_per_backend():
 
     load_default_components()
     base = ["experiment.train.backend=sb3", "experiment.train.algorithm=ppo"]
-    cfg = _compose(base)
+    cfg = compose_config(base)
     h = load_algo_hparams(cfg, "ppo")
     assert "policy" in h and "learning_rate" in h
 
-    cfg2 = _compose(["experiment.train.backend=tianshou", "experiment.train.algorithm=ppo"])
+    cfg2 = compose_config(["experiment.train.backend=tianshou", "experiment.train.algorithm=ppo"])
     h2 = load_algo_hparams(cfg2, "ppo")
     assert "batch_size" in h2
 
-    cfg3 = _compose(["experiment.train.backend=rllib", "experiment.train.algorithm=ppo"])
+    cfg3 = compose_config(["experiment.train.backend=rllib", "experiment.train.algorithm=ppo"])
     h3 = load_algo_hparams(cfg3, "ppo")
     assert "lr" in h3
 
-    cfg4 = _compose(["experiment.train.backend=sb3", "experiment.train.algorithm=sac"])
+    cfg4 = compose_config(["experiment.train.backend=sb3", "experiment.train.algorithm=sac"])
     h4 = load_algo_hparams(cfg4, "sac")
     assert h4["policy"] == "MlpPolicy" and "buffer_size" in h4
+
+    cfg5 = compose_config(["experiment.train.backend=tianshou", "experiment.train.algorithm=td3"])
+    h5 = load_algo_hparams(cfg5, "td3")
+    assert "policy_noise" in h5 and h5["update_actor_freq"] == 2
+
+    cfg6 = compose_config(["experiment.train.backend=rllib", "experiment.train.algorithm=ddpg"])
+    h6 = load_algo_hparams(cfg6, "ddpg")
+    assert h6["train_batch_size"] == 256 and h6["tau"] == 0.005
+
+
+def test_load_algo_hparams_merges_hydra_algorithm_sb3():
+    """Hydra 组 algorithm/sb3 映射到 cfg.algorithm.sb3，并参与 SB3 超参合并。"""
+    from onlyuav.rl.hparams import load_algo_hparams
+
+    load_default_components()
+    cfg = compose_config(
+        [
+            "experiment.train.backend=sb3",
+            "experiment.train.algorithm=ppo",
+            "+algorithm/sb3=ppo",
+            "algorithm.sb3.learning_rate=0.001",
+        ]
+    )
+    h = load_algo_hparams(cfg, "ppo")
+    assert h["learning_rate"] == 0.001

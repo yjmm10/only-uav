@@ -5,7 +5,7 @@
 无需为每个算法单独建 YAML。可选：
 
 - experiment.train.shared_algo_kwargs：同一 backend 下多算法共用的键（如 learning_rate、gamma）；
-- configs/algorithm*.yaml：若存在则叠加覆盖（便于论文复现时微调）；
+- configs/algorithm/<backend>/*.yaml：若存在则叠加覆盖（便于论文复现时微调）；
 - experiment.train.algo_kwargs：最高优先级覆盖。
 """
 from __future__ import annotations
@@ -73,9 +73,13 @@ SB3: dict[str, dict[str, Any]] = {
 }
 
 # ---- Ray RLlib (training() 常用键) ----
+# 注：td3 / ddpg / a2c 依赖 Ray 自带模块；较新 Ray（约 2.38+）可能已移除，训练时会提示改用 sb3/tianshou 或降级 ray。
 RLLIB: dict[str, dict[str, Any]] = {
     "ppo": {"lr": 3.0e-4, "gamma": 0.99, "train_batch_size": 4000},
     "sac": {"lr": 3.0e-4, "gamma": 0.99, "train_batch_size": 256, "tau": 0.005},
+    "a2c": {"lr": 7.0e-4, "gamma": 0.99, "train_batch_size": 4000},
+    "td3": {"lr": 1.0e-3, "gamma": 0.99, "train_batch_size": 100, "tau": 0.005},
+    "ddpg": {"lr": 1.0e-4, "gamma": 0.99, "train_batch_size": 256, "tau": 0.005},
 }
 
 # ---- Tianshou ----
@@ -109,6 +113,51 @@ TIANSHOU: dict[str, dict[str, Any]] = {
         "gradient_steps": 1,
         "auto_alpha": True,
         "target_entropy_scale": 1.0,
+        "reward_normalization": False,
+        "estimation_step": 1,
+    },
+    "a2c": {
+        "lr": 7.0e-4,
+        "gamma": 0.99,
+        "batch_size": 64,
+        "step_per_collect": 2048,
+        "repeat_per_update": 5,
+        "training_num_envs": 1,
+        "hidden_sizes": [64, 64],
+        "max_grad_norm": 0.5,
+        "vf_coef": 0.5,
+        "ent_coef": 0.01,
+        "gae_lambda": 1.0,
+        "max_batchsize": 256,
+    },
+    "td3": {
+        "lr": 1.0e-3,
+        "gamma": 0.99,
+        "tau": 0.005,
+        "batch_size": 100,
+        "step_per_collect": 2048,
+        "training_num_envs": 1,
+        "hidden_sizes": [64, 64],
+        "learning_starts": 100,
+        "gradient_steps": 1,
+        "policy_noise": 0.2,
+        "update_actor_freq": 2,
+        "noise_clip": 0.5,
+        "exploration_sigma": 0.1,
+        "reward_normalization": False,
+        "estimation_step": 1,
+    },
+    "ddpg": {
+        "lr": 1.0e-4,
+        "gamma": 0.99,
+        "tau": 0.005,
+        "batch_size": 128,
+        "step_per_collect": 2048,
+        "training_num_envs": 1,
+        "hidden_sizes": [64, 64],
+        "learning_starts": 10000,
+        "gradient_steps": 1,
+        "exploration_sigma": 0.1,
         "reward_normalization": False,
         "estimation_step": 1,
     },
